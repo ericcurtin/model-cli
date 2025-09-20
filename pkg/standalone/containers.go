@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -270,6 +271,25 @@ func CreateControllerContainer(ctx context.Context, dockerClient *client.Client,
 	if gpu == gpupkg.GPUSupportCUDA {
 		hostConfig.Runtime = "nvidia"
 		hostConfig.DeviceRequests = []container.DeviceRequest{{Count: -1, Capabilities: [][]string{{"gpu"}}}}
+	}
+
+	// Enable access to AI accelerator devices if they exist
+	devicePaths := []string{"/dev/dri", "/dev/kfd", "/dev/accel", "/dev/davinci*", "/dev/devmm_svm", "/dev/hisi_hdc"}
+	for _, path := range devicePaths {
+		devices, err := filepath.Glob(path)
+		if err != nil {
+			// Skip on glob error, don't fail container creation
+			continue
+		}
+		for _, device := range devices {
+			if _, err := os.Stat(device); err == nil {
+				hostConfig.Devices = append(hostConfig.Devices, container.DeviceMapping{
+					PathOnHost:        device,
+					PathInContainer:   device,
+					CgroupPermissions: "rwm",
+				})
+			}
+		}
 	}
 
 	// Create the container. If we detect that a concurrent installation is in
